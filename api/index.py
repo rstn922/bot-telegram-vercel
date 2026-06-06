@@ -15,8 +15,13 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8222875265:AAHiGudrPhJzkPm2Z9mUg5G
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 # Inisialisasi Vercel KV (Redis)
-# Vercel akan otomatis menyuntikkan KV_REST_API_URL dan KV_REST_API_TOKEN
-redis = Redis.from_env()
+kv_url = os.getenv("KV_REST_API_URL", os.getenv("UPSTASH_REDIS_REST_URL"))
+kv_token = os.getenv("KV_REST_API_TOKEN", os.getenv("UPSTASH_REDIS_REST_TOKEN"))
+
+if kv_url and kv_token:
+    redis = Redis(url=kv_url, token=kv_token)
+else:
+    redis = None
 
 logging.basicConfig(level=logging.INFO)
 
@@ -44,6 +49,10 @@ async def telegram_webhook(request: Request):
         
     chat_id = data["message"]["chat"]["id"]
     text = data["message"]["text"]
+    
+    if not redis:
+        await send_telegram_message(chat_id, 'Error 500: Vercel KV Database belum dikonfigurasi dengan benar!')
+        return {"status": "ok"}
     
     # Jika pesan adalah perintah /start
     if text.startswith("/start"):
@@ -101,7 +110,6 @@ async def telegram_webhook(request: Request):
         task = "Sesuatu yang Anda jadwalkan"
 
     # SIMPAN KE VERCEL KV (REDIS)
-    # Kita menggunakan Timestamp (detik) sebagai "Score" pada Sorted Set
     timestamp = int(dt.timestamp())
     payload = json.dumps({"chat_id": chat_id, "task": task})
     
@@ -117,14 +125,8 @@ async def telegram_webhook(request: Request):
 
 @app.get("/cron")
 async def run_cron(request: Request):
-    """
-    Endpoint ini dipanggil oleh Vercel Cron setiap 1 menit.
-    Bertugas mengecek Redis dan mengirim pesan yang sudah waktunya.
-    """
-    # Verifikasi pengirim adalah Vercel Cron (Opsional untuk keamanan)
-    # auth_header = request.headers.get('Authorization')
-    # if auth_header != f"Bearer {os.environ.get('CRON_SECRET')}":
-    #     return {"error": "Unauthorized"}
+    if not redis:
+        return {"status": "error", "message": "Redis not configured"}
         
     current_time = int(datetime.datetime.now().timestamp())
     
