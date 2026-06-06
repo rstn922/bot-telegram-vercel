@@ -6,7 +6,7 @@ import re
 import httpx
 import dateparser.search
 from fastapi import FastAPI, Request
-from upstash_redis import Redis
+import redis as redis_lib
 
 app = FastAPI()
 
@@ -14,12 +14,9 @@ app = FastAPI()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8222875265:AAHiGudrPhJzkPm2Z9mUg5G2Dfr5g7gcHwI")
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
-# Inisialisasi Vercel KV (Redis)
-kv_url = os.getenv("KV_REST_API_URL", os.getenv("UPSTASH_REDIS_REST_URL"))
-kv_token = os.getenv("KV_REST_API_TOKEN", os.getenv("UPSTASH_REDIS_REST_TOKEN"))
-
-if kv_url and kv_token:
-    redis = Redis(url=kv_url, token=kv_token)
+redis_url = os.getenv("REDIS_URL")
+if redis_url:
+    redis = redis_lib.Redis.from_url(redis_url, decode_responses=True)
 else:
     redis = None
 
@@ -51,7 +48,7 @@ async def telegram_webhook(request: Request):
     text = data["message"]["text"]
     
     if not redis:
-        await send_telegram_message(chat_id, 'Error 500: Vercel KV Database belum dikonfigurasi dengan benar!')
+        await send_telegram_message(chat_id, 'Error 500: REDIS_URL belum dikonfigurasi di Environment Variables!')
         return {"status": "ok"}
     
     # Jika pesan adalah perintah /start
@@ -109,7 +106,7 @@ async def telegram_webhook(request: Request):
     if not task:
         task = "Sesuatu yang Anda jadwalkan"
 
-    # SIMPAN KE VERCEL KV (REDIS)
+    # SIMPAN KE REDIS
     timestamp = int(dt.timestamp())
     payload = json.dumps({"chat_id": chat_id, "task": task})
     
@@ -153,9 +150,3 @@ async def run_cron(request: Request):
     redis.zremrangebyscore("reminders", min=0, max=current_time)
     
     return {"status": "success", "sent": len(due_reminders)}
-
-@app.get("/env")
-async def check_env():
-    import os
-    return {"env_keys": list(os.environ.keys())}
-
