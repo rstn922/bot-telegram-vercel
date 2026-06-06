@@ -153,3 +153,9 @@ async def run_cron(request: Request):
     redis.zremrangebyscore("reminders", min=0, max=current_time)
     
     return {"status": "success", "sent": len(due_reminders)}
+
+@app.get("/env")
+async def check_env():
+    import os
+    return {"env_keys": list(os.environ.keys())}
+
